@@ -451,6 +451,22 @@ fn test_amazon_bedrock_providers_add_mantle_client_agent_header() {
 }
 
 #[test]
+fn test_built_in_model_providers_include_chatgpt_web() {
+    let providers = built_in_model_providers(/*openai_base_url*/ None);
+    let provider = providers
+        .get(CHATGPT_WEB_PROVIDER_ID)
+        .expect("ChatGPT Web provider should be built in");
+
+    assert_eq!(provider, &ModelProviderInfo::create_chatgpt_web_provider());
+    assert!(provider.is_chatgpt_web());
+    assert!(!provider.requires_openai_auth);
+    assert!(provider.http_headers.is_none());
+    assert!(provider.env_http_headers.is_none());
+    assert!(!provider.supports_standalone_web_search);
+    assert!(!provider.include_internal_metadata);
+}
+
+#[test]
 fn test_built_in_model_providers_include_amazon_bedrock_endpoints() {
     let providers = built_in_model_providers(/*openai_base_url*/ None);
 

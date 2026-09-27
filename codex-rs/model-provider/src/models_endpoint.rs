@@ -38,6 +38,7 @@ use tokio::time::timeout;
 use crate::auth::ResolvedProviderAuth;
 use crate::auth::agent_identity_telemetry;
 use crate::auth::resolve_provider_auth;
+use crate::chatgpt_web_runtime::process_chatgpt_web_runtime;
 use crate::combined_auth::compose_auth;
 
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
@@ -92,6 +93,9 @@ impl OpenAiModelsEndpoint {
         client_version: &str,
         http_client_factory: HttpClientFactory,
     ) -> CoreResult<ModelsEndpointResponse> {
+        if self.provider_info.is_chatgpt_web() {
+            process_chatgpt_web_runtime().ensure_ready().await?;
+        }
         let auth = self.auth().await;
         let metric_auth_mode = if self.has_provider_api_key()
             || auth.as_ref().is_some_and(CodexAuth::is_api_key_auth)
