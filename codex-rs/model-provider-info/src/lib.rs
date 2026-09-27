@@ -75,6 +75,10 @@ const OPENAI_PROVIDER_NAME: &str = "OpenAI";
 const OPENAI_ACTOR_AUTHORIZATION_HEADER: &str = "x-openai-actor-authorization";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
 pub const CHATGPT_CODEX_BASE_URL: &str = "https://chatgpt.com/backend-api/codex";
+const CHATGPT_WEB_PROVIDER_NAME: &str = "ChatGPT Web";
+pub const CHATGPT_WEB_PROVIDER_ID: &str = "chatgpt-web";
+pub const CHATGPT_WEB_BASE_URL: &str = "http://127.0.0.1:17841/v1";
+pub const CHATGPT_WEB_MODEL_CATALOG_URL: &str = "http://127.0.0.1:17841/v1/models";
 const AMAZON_BEDROCK_PROVIDER_NAME: &str = "Amazon Bedrock";
 pub const AMAZON_BEDROCK_PROVIDER_ID: &str = "amazon-bedrock";
 const AMAZON_BEDROCK_RUNTIME_PROVIDER_NAME: &str = "Amazon Bedrock Runtime";
@@ -556,6 +560,19 @@ other non-default provider fields are not supported"
         }
     }
 
+    pub fn create_chatgpt_web_provider() -> ModelProviderInfo {
+        let mut provider = Self::create_openai_provider(Some(CHATGPT_WEB_BASE_URL.to_string()));
+        provider.name = CHATGPT_WEB_PROVIDER_NAME.into();
+        provider.model_catalog_url = Some(CHATGPT_WEB_MODEL_CATALOG_URL.into());
+        provider.http_headers = None;
+        provider.env_http_headers = None;
+        provider.requires_openai_auth = false;
+        provider.supports_websockets = false;
+        provider.supports_standalone_web_search = false;
+        provider.include_internal_metadata = false;
+        provider
+    }
+
     pub fn create_amazon_bedrock_provider(
         aws: Option<ModelProviderAwsAuthInfo>,
     ) -> ModelProviderInfo {
@@ -607,6 +624,11 @@ other non-default provider fields are not supported"
         self.name == OPENAI_PROVIDER_NAME
     }
 
+    pub fn is_chatgpt_web(&self) -> bool {
+        self.name == CHATGPT_WEB_PROVIDER_NAME
+            && self.base_url.as_deref() == Some(CHATGPT_WEB_BASE_URL)
+    }
+
     pub fn supports_codex_backend_routes(&self) -> bool {
         self.is_openai()
             && self.base_url.as_deref().is_none_or(|base_url| {
@@ -652,6 +674,7 @@ pub fn built_in_model_providers(
 ) -> HashMap<String, ModelProviderInfo> {
     use ModelProviderInfo as P;
     let openai_provider = P::create_openai_provider(openai_base_url);
+    let chatgpt_web_provider = P::create_chatgpt_web_provider();
     let amazon_bedrock_provider = P::create_amazon_bedrock_provider(/*aws*/ None);
     let amazon_bedrock_runtime_provider =
         P::create_amazon_bedrock_runtime_provider(/*aws*/ None);
@@ -662,6 +685,7 @@ pub fn built_in_model_providers(
     // `model_providers` in config.toml to add their own providers.
     [
         (OPENAI_PROVIDER_ID, openai_provider),
+        (CHATGPT_WEB_PROVIDER_ID, chatgpt_web_provider),
         (AMAZON_BEDROCK_PROVIDER_ID, amazon_bedrock_provider),
         (
             AMAZON_BEDROCK_RUNTIME_PROVIDER_ID,

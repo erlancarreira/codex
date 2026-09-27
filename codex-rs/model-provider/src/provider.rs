@@ -30,6 +30,7 @@ use crate::auth::ResolvedProviderAuth;
 use crate::auth::auth_manager_for_provider;
 use crate::auth::resolve_provider_auth;
 use crate::auth::resolve_provider_auth_for_scope;
+use crate::chatgpt_web_runtime::process_chatgpt_web_runtime;
 use crate::combined_auth::compose_auth;
 use crate::models_endpoint::OpenAiModelsEndpoint;
 use crate::workspace_routing::WorkspaceRoutingContext;
@@ -235,6 +236,9 @@ pub trait ModelProvider: fmt::Debug + Send + Sync {
     /// Returns provider configuration adapted for the API client.
     fn api_provider(&self) -> ModelProviderFuture<'_, codex_protocol::error::Result<Provider>> {
         Box::pin(async move {
+            if self.info().is_chatgpt_web() {
+                process_chatgpt_web_runtime().ensure_ready().await?;
+            }
             let auth = self.auth().await;
             self.info()
                 .to_api_provider(auth.as_ref().map(CodexAuth::auth_mode))
@@ -382,7 +386,11 @@ pub fn create_model_provider(
             .gateway_auth(config, &manager.runtime_config())
             .map_err(|_| "failed to create provider OAuth HTTP client".to_string())
     });
-    let auth_manager = auth_manager_for_provider(auth_manager, &provider_info);
+    let auth_manager = if provider_info.is_chatgpt_web() {
+        None
+    } else {
+        auth_manager_for_provider(auth_manager, &provider_info)
+    };
     Arc::new(ConfiguredModelProvider::new(
         provider_info,
         auth_manager,
@@ -420,6 +428,7 @@ impl ModelProvider for ConfiguredModelProvider {
 
     fn capabilities(&self) -> ProviderCapabilities {
         let remote_compaction = if self.info.is_openai()
+            || self.info.is_chatgpt_web()
             || is_azure_responses_provider(&self.info.name, self.info.base_url.as_deref())
         {
             RemoteCompactionSupport::V2
@@ -881,6 +890,27 @@ mod tests {
             .expect("command auth provider should have an auth manager");
 
         assert!(auth_manager.has_external_auth());
+    }
+
+    #[test]
+    fn create_model_provider_does_not_expose_openai_auth_to_chatgpt_web_runtime() {
+        let provider = create_model_provider(
+            ModelProviderInfo::create_chatgpt_web_provider(),
+            Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+                "openai-api-key",
+            ))),
+        );
+
+        assert!(provider.auth_manager().is_none());
+        assert_eq!(
+            provider
+                .account_state()
+                .expect("account state should resolve"),
+            ProviderAccountState {
+                account: None,
+                requires_openai_auth: false,
+            }
+        );
     }
 
     #[test]

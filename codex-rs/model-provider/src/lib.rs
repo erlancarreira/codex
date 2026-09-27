@@ -1,6 +1,7 @@
 mod amazon_bedrock;
 mod auth;
 mod bearer_auth_provider;
+mod chatgpt_web_runtime;
 mod combined_auth;
 mod models_endpoint;
 mod models_identity;
