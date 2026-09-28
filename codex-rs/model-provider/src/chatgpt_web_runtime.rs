@@ -5,6 +5,8 @@ use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
 use std::net::TcpStream;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Child;
@@ -193,19 +195,26 @@ fn validate_launcher(path: PathBuf) -> io::Result<PathBuf> {
         )
     })
 }
-fn spawn_launcher(launcher: &Path) -> io::Result<Child> {
-    let mut command = if cfg!(windows) {
+fn launcher_command(launcher: &Path) -> Command {
+    #[cfg(windows)]
+    {
         let mut command = Command::new("cmd.exe");
         command
-            .arg("/d")
-            .arg("/c")
-            .arg(format!("call \"{}\" serve", launcher.display()));
+            .args(["/d", "/c"])
+            .raw_arg(format!("call \"{}\" serve", launcher.display()));
         command
-    } else {
+    }
+
+    #[cfg(not(windows))]
+    {
         let mut command = Command::new(launcher);
         command.arg("serve");
         command
-    };
+    }
+}
+
+fn spawn_launcher(launcher: &Path) -> io::Result<Child> {
+    let mut command = launcher_command(launcher);
 
     command
         .env("CODEX_CHATGPT_WEB_NATIVE", "1")

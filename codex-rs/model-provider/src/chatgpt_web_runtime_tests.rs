@@ -3,6 +3,8 @@ use std::fs;
 use tempfile::TempDir;
 
 use super::latest_launcher_in;
+#[cfg(windows)]
+use super::launcher_command;
 
 #[test]
 fn latest_launcher_in_prefers_the_highest_installed_version() {
@@ -31,4 +33,24 @@ fn latest_launcher_in_ignores_versions_without_a_launcher() {
         .expect("incomplete version");
 
     assert_eq!(latest_launcher_in(temp.path()), None);
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_launcher_command_preserves_quoted_batch_path() {
+    let temp = TempDir::new().expect("temp dir");
+    let dir = temp.path().join("launcher with spaces");
+    fs::create_dir_all(&dir).expect("launcher dir");
+    let launcher = dir.join("codex-chatgpt-web.cmd");
+    fs::write(
+        &launcher,
+        "@echo off\r\nif \"%1\"==\"serve\" exit /b 37\r\nexit /b 99\r\n",
+    )
+    .expect("launcher");
+
+    let status = launcher_command(&launcher)
+        .status()
+        .expect("launcher command should start");
+
+    assert_eq!(status.code(), Some(37));
 }
