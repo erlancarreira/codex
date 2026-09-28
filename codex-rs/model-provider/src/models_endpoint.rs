@@ -202,6 +202,10 @@ impl OpenAiModelsEndpoint {
 }
 
 impl ModelsEndpointClient for OpenAiModelsEndpoint {
+    fn has_authoritative_remote_catalog(&self) -> bool {
+        self.provider_info.is_chatgpt_web()
+    }
+
     fn supports_api_key_models(&self) -> bool {
         self.provider_info.model_catalog_url.is_some()
             || (self.provider_info.is_openai() && self.provider_info.base_url.is_none())

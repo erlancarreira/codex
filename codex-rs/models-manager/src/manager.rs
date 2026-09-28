@@ -49,6 +49,12 @@ pub trait ModelsEndpointClient: fmt::Debug + Send + Sync {
     /// Returns whether the currently resolved auth can use Codex backend-only models.
     fn uses_codex_backend(&self) -> ModelsEndpointFuture<'_, bool>;
 
+    /// Returns whether this provider's remote catalog is authoritative even without API-key or
+    /// first-party account authentication. Such providers must be refreshed for picker discovery.
+    fn has_authoritative_remote_catalog(&self) -> bool {
+        false
+    }
+
     /// Returns whether this provider supports an authoritative catalog with OpenAI API keys.
     fn supports_api_key_models(&self) -> bool {
         false
@@ -563,7 +569,8 @@ impl OpenAiModelsManager {
     }
 
     async fn should_refresh_models(&self) -> bool {
-        self.endpoint_client.uses_codex_backend().await
+        self.endpoint_client.has_authoritative_remote_catalog()
+            || self.endpoint_client.uses_codex_backend().await
             || self.endpoint_client.has_command_auth()
             || self.supports_api_key_discovery()
     }
@@ -579,7 +586,8 @@ impl OpenAiModelsManager {
             .models
             .iter()
             .any(|model| model.visibility == ModelVisibility::List)
-            && (self.supports_api_key_discovery()
+            && (self.endpoint_client.has_authoritative_remote_catalog()
+                || self.supports_api_key_discovery()
                 || self.auth_manager.as_ref().is_some_and(|auth_manager| {
                     auth_manager
                         .auth_mode()
