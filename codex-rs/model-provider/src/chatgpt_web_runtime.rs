@@ -337,8 +337,13 @@ fn validate_launcher(path: PathBuf) -> io::Result<PathBuf> {
 fn launcher_command(launcher: &Path) -> Command {
     #[cfg(windows)]
     {
+        use std::os::windows::process::CommandExt;
+
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
         let mut command = Command::new("cmd.exe");
         command
+            .creation_flags(CREATE_NO_WINDOW)
             .args(["/d", "/c"])
             .raw_arg(format!("call \"{}\" serve", launcher.display()));
         command
