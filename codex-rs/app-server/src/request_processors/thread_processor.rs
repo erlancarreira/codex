@@ -5476,6 +5476,10 @@ impl ThreadRequestProcessor {
                 }
             }
             None if relation_filter.is_some() => None,
+            None if self.config.model_provider.is_chatgpt_web() => Some(vec![
+                self.config.model_provider_id.clone(),
+                "openai".to_string(),
+            ]),
             None => Some(vec![self.config.model_provider_id.clone()]),
         };
         let (allowed_sources_vec, source_kind_filter) =

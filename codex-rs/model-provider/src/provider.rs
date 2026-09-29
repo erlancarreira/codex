@@ -19,6 +19,7 @@ use codex_models_manager::cache::ModelsCache;
 use codex_models_manager::manager::OpenAiModelsManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_models_manager::manager::StaticModelsManager;
+use codex_protocol::account::PlanType;
 use codex_protocol::account::ProviderAccount;
 use codex_protocol::error::CodexErr;
 use codex_protocol::openai_models::ModelsResponse;
@@ -30,6 +31,7 @@ use crate::auth::ResolvedProviderAuth;
 use crate::auth::auth_manager_for_provider;
 use crate::auth::resolve_provider_auth;
 use crate::auth::resolve_provider_auth_for_scope;
+use crate::chatgpt_web_runtime::chatgpt_web_login_state_exists;
 use crate::chatgpt_web_runtime::process_chatgpt_web_runtime;
 use crate::combined_auth::compose_auth;
 use crate::models_endpoint::OpenAiModelsEndpoint;
@@ -521,6 +523,19 @@ impl ModelProvider for ConfiguredModelProvider {
     }
 
     fn account_state(&self) -> ProviderAccountResult {
+        if self.info.is_chatgpt_web() {
+            return Ok(ProviderAccountState {
+                account: chatgpt_web_login_state_exists().then_some(ProviderAccount::Chatgpt {
+                    email: None,
+                    plan_type: PlanType::Unknown,
+                }),
+                // This is app-visible account state only. ChatGPT Web requests still do not
+                // inherit Codex/OpenAI authentication because the provider itself keeps
+                // requires_openai_auth=false and its AuthManager is dropped at construction.
+                requires_openai_auth: true,
+            });
+        }
+
         let account = if self.info.requires_openai_auth {
             self.auth_manager
                 .as_ref()
@@ -893,7 +908,7 @@ mod tests {
     }
 
     #[test]
-    fn create_model_provider_does_not_expose_openai_auth_to_chatgpt_web_runtime() {
+    fn create_model_provider_keeps_model_auth_isolated_and_requires_web_login() {
         let provider = create_model_provider(
             ModelProviderInfo::create_chatgpt_web_provider(),
             Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
@@ -908,7 +923,7 @@ mod tests {
                 .expect("account state should resolve"),
             ProviderAccountState {
                 account: None,
-                requires_openai_auth: false,
+                requires_openai_auth: true,
             }
         );
     }

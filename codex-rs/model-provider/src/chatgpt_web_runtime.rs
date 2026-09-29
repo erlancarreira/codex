@@ -1,6 +1,8 @@
 use std::env;
 use std::fs;
 use std::io;
+use std::io::Read;
+use std::io::Write;
 use std::net::IpAddr;
 use std::net::Ipv4Addr;
 use std::net::SocketAddr;
@@ -17,6 +19,8 @@ use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::time::Duration;
 use std::time::Instant;
+
+use serde_json::Value;
 
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::sleep;
@@ -45,6 +49,14 @@ impl ChatGptWebRuntime {
             startup: AsyncMutex::new(()),
             child: Mutex::new(None),
         }
+    }
+
+    pub(crate) async fn logout_account(&self) -> io::Result<()> {
+        self.ensure_ready().await?;
+        let token = read_control_token()?;
+        tokio::task::spawn_blocking(move || post_control_request("/admin/account/logout", &token))
+            .await
+            .map_err(io::Error::other)?
     }
 
     pub(crate) async fn ensure_ready(&self) -> io::Result<()> {
@@ -109,6 +121,133 @@ impl ChatGptWebRuntime {
             .transpose()
             .map(Option::flatten)
     }
+}
+
+pub(crate) fn chatgpt_web_login_state_exists() -> bool {
+    runtime_home()
+        .as_deref()
+        .is_some_and(chatgpt_web_login_state_exists_in)
+}
+
+fn chatgpt_web_login_state_exists_in(home: &Path) -> bool {
+    let Ok(config) = read_runtime_config_in(home) else {
+        return false;
+    };
+    let Some(storage_path) = config
+        .get("storageStatePath")
+        .and_then(Value::as_str)
+        .and_then(expand_user_path)
+    else {
+        return false;
+    };
+    if !storage_path.is_file() {
+        return false;
+    }
+    let marker_path = PathBuf::from(format!("{}.verified.json", storage_path.display()));
+    let Ok(marker_text) = fs::read_to_string(marker_path) else {
+        return false;
+    };
+    let Ok(marker) = serde_json::from_str::<Value>(&marker_text) else {
+        return false;
+    };
+    marker.get("version").and_then(Value::as_u64) == Some(1)
+        && marker.get("authenticated").and_then(Value::as_bool) == Some(true)
+        && marker
+            .get("verifiedAt")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty())
+}
+
+fn runtime_home() -> Option<PathBuf> {
+    non_empty_env_path("CODEX_CHATGPT_WEB_HOME").or_else(default_runtime_home)
+}
+
+fn read_runtime_config() -> io::Result<Value> {
+    let home = runtime_home().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            "could not resolve ChatGPT Web runtime home",
+        )
+    })?;
+    read_runtime_config_in(&home)
+}
+
+fn read_runtime_config_in(home: &Path) -> io::Result<Value> {
+    let contents = fs::read_to_string(home.join("config.json"))?;
+    let contents = contents.strip_prefix('\u{feff}').unwrap_or(&contents);
+    serde_json::from_str(contents).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("invalid ChatGPT Web runtime config: {error}"),
+        )
+    })
+}
+
+fn read_control_token() -> io::Result<String> {
+    let config = read_runtime_config()?;
+    let token = config
+        .get("controlToken")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| {
+            value.len() >= 40
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+        })
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "ChatGPT Web control token is missing or invalid",
+            )
+        })?;
+    Ok(token.to_owned())
+}
+
+fn expand_user_path(value: &str) -> Option<PathBuf> {
+    if value == "~" {
+        return user_home();
+    }
+    if let Some(rest) = value
+        .strip_prefix("~/")
+        .or_else(|| value.strip_prefix("~\\"))
+    {
+        return user_home().map(|home| home.join(rest));
+    }
+    Some(PathBuf::from(value))
+}
+
+fn user_home() -> Option<PathBuf> {
+    if cfg!(windows) {
+        non_empty_env_path("USERPROFILE")
+    } else {
+        non_empty_env_path("HOME")
+    }
+}
+
+fn post_control_request(path: &str, token: &str) -> io::Result<()> {
+    let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), CHATGPT_WEB_PORT);
+    let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(2))?;
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{CHATGPT_WEB_PORT}\r\nAuthorization: Bearer {token}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+    );
+    stream.write_all(request.as_bytes())?;
+    stream.flush()?;
+
+    let mut response = [0_u8; 512];
+    let read = stream.read(&mut response)?;
+    let status_line = std::str::from_utf8(&response[..read])
+        .ok()
+        .and_then(|text| text.lines().next())
+        .unwrap_or_default();
+    if status_line.starts_with("HTTP/1.1 200 ") || status_line.starts_with("HTTP/1.0 200 ") {
+        return Ok(());
+    }
+    Err(io::Error::other(
+        "ChatGPT Web runtime rejected account logout",
+    ))
 }
 
 fn endpoint_ready() -> bool {

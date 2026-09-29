@@ -23,6 +23,16 @@ pub use auth::auth_provider_from_auth_manager;
 pub use auth::unauthenticated_auth_provider;
 pub use bearer_auth_provider::BearerAuthProvider;
 pub use bearer_auth_provider::BearerAuthProvider as CoreAuthProvider;
+
+pub fn chatgpt_web_account_is_connected() -> bool {
+    chatgpt_web_runtime::chatgpt_web_login_state_exists()
+}
+
+pub async fn logout_chatgpt_web_account() -> std::io::Result<()> {
+    chatgpt_web_runtime::process_chatgpt_web_runtime()
+        .logout_account()
+        .await
+}
 pub use codex_model_provider_info::AMAZON_BEDROCK_PROVIDER_ID;
 pub use codex_model_provider_info::AMAZON_BEDROCK_RUNTIME_PROVIDER_ID;
 pub use codex_model_provider_info::CHATGPT_CODEX_BASE_URL;

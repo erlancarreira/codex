@@ -1,7 +1,9 @@
 use std::fs;
+use std::path::PathBuf;
 
 use tempfile::TempDir;
 
+use super::chatgpt_web_login_state_exists_in;
 use super::latest_launcher_in;
 #[cfg(windows)]
 use super::launcher_command;
@@ -53,4 +55,64 @@ fn windows_launcher_command_preserves_quoted_batch_path() {
         .expect("launcher command should start");
 
     assert_eq!(status.code(), Some(37));
+}
+
+#[test]
+fn verified_login_state_is_detected_from_runtime_home() {
+    let temp = TempDir::new().expect("temp dir");
+    let browser = temp.path().join("browser");
+    fs::create_dir_all(&browser).expect("browser dir");
+    let storage = browser.join("storage-state.json");
+    fs::write(&storage, "{}\n").expect("storage state");
+    fs::write(
+        PathBuf::from(format!("{}.verified.json", storage.display())),
+        r#"{"version":1,"authenticated":true,"verifiedAt":"2026-09-28T00:00:00.000Z"}"#,
+    )
+    .expect("verification marker");
+    fs::write(
+        temp.path().join("config.json"),
+        serde_json::json!({ "storageStatePath": storage }).to_string(),
+    )
+    .expect("runtime config");
+
+    assert!(chatgpt_web_login_state_exists_in(temp.path()));
+}
+
+#[test]
+fn login_state_rejects_missing_or_unverified_marker() {
+    let temp = TempDir::new().expect("temp dir");
+    let storage = temp.path().join("storage-state.json");
+    fs::write(&storage, "{}\n").expect("storage state");
+    fs::write(
+        temp.path().join("config.json"),
+        serde_json::json!({ "storageStatePath": storage }).to_string(),
+    )
+    .expect("runtime config");
+
+    assert!(!chatgpt_web_login_state_exists_in(temp.path()));
+
+    fs::write(
+        PathBuf::from(format!("{}.verified.json", storage.display())),
+        r#"{"version":1,"authenticated":false,"verifiedAt":"2026-09-28T00:00:00.000Z"}"#,
+    )
+    .expect("verification marker");
+    assert!(!chatgpt_web_login_state_exists_in(temp.path()));
+}
+
+#[test]
+fn verified_login_state_accepts_utf8_bom_config() {
+    let temp = TempDir::new().expect("temp dir");
+    let browser = temp.path().join("browser");
+    fs::create_dir_all(&browser).expect("browser dir");
+    let storage = browser.join("storage-state.json");
+    fs::write(&storage, "{}\n").expect("storage state");
+    fs::write(
+        PathBuf::from(format!("{}.verified.json", storage.display())),
+        r#"{"version":1,"authenticated":true,"verifiedAt":"2026-09-28T00:00:00.000Z"}"#,
+    )
+    .expect("verification marker");
+    let json = serde_json::json!({ "storageStatePath": storage }).to_string();
+    fs::write(temp.path().join("config.json"), format!("\u{feff}{json}")).expect("runtime config");
+
+    assert!(chatgpt_web_login_state_exists_in(temp.path()));
 }

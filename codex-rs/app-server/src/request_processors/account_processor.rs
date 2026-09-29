@@ -1001,6 +1001,28 @@ impl AccountRequestProcessor {
     }
 
     async fn logout_v2(&self, request_id: ConnectionRequestId) -> Result<(), JSONRPCErrorError> {
+        let config = self.load_latest_config().await;
+        if config.model_provider.is_chatgpt_web() {
+            let result = codex_model_provider::logout_chatgpt_web_account()
+                .await
+                .map_err(|err| internal_error(format!("ChatGPT Web logout failed: {err}")));
+            let logout_succeeded = result.is_ok();
+            self.outgoing
+                .send_result(request_id, result.map(|_| LogoutAccountResponse {}))
+                .await;
+            if logout_succeeded {
+                self.outgoing
+                    .send_server_notification(ServerNotification::AccountUpdated(
+                        AccountUpdatedNotification {
+                            auth_mode: None,
+                            plan_type: None,
+                        },
+                    ))
+                    .await;
+            }
+            return Ok(());
+        }
+
         let result = self.logout_common().await;
         let account_updated =
             result
@@ -1053,7 +1075,29 @@ impl AccountRequestProcessor {
         let config = self.load_latest_config().await;
         let requires_openai_auth = config.model_provider.requires_openai_auth;
 
-        let response = if !requires_openai_auth {
+        let response = if config.model_provider.is_chatgpt_web() {
+            let auth = self.auth_manager.auth_cached();
+            if let Some(auth) = auth {
+                let auth_mode = auth_mode_to_api(auth.api_auth_mode());
+                let token_opt = if include_token {
+                    auth.get_token().ok().filter(|token| !token.is_empty())
+                } else {
+                    None
+                };
+                GetAuthStatusResponse {
+                    auth_method: Some(auth_mode),
+                    auth_token: token_opt,
+                    requires_openai_auth: Some(true),
+                }
+            } else {
+                let connected = codex_model_provider::chatgpt_web_account_is_connected();
+                GetAuthStatusResponse {
+                    auth_method: connected.then_some(codex_app_server_protocol::AuthMode::Chatgpt),
+                    auth_token: None,
+                    requires_openai_auth: Some(true),
+                }
+            }
+        } else if !requires_openai_auth {
             GetAuthStatusResponse {
                 auth_method: None,
                 auth_token: None,
