@@ -19,9 +19,9 @@ jobs:
       CARGO_PROFILE_RELEASE_DEBUG: "none"
       CARGO_PROFILE_RELEASE_STRIP: "symbols"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.2
         with:
           workspaces: codex-rs -> target
           cache-on-failure: true
@@ -42,7 +42,7 @@ jobs:
           Get-Item target/release/codex.exe | Select-Object FullName,Length,LastWriteTime
           Get-FileHash target/release/codex.exe -Algorithm SHA256
       - name: Upload CodexNative executable
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: codex-native-windows-x64
           path: codex-rs/target/release/codex.exe
