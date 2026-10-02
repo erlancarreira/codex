@@ -12,6 +12,7 @@ pub fn supported_models(models: Vec<ModelPreset>, include_hidden: bool) -> Vec<M
         .collect::<Vec<_>>();
 
     apply_chatgpt_web_picker_presentation(&mut models);
+    ensure_chatgpt_web_picker_aliases(&mut models);
 
     if !include_hidden {
         models.retain(|model| !model.hidden);
@@ -45,6 +46,58 @@ fn apply_chatgpt_web_picker_presentation(models: &mut [Model]) {
             }
             _ => {}
         }
+    }
+}
+
+fn ensure_chatgpt_web_picker_aliases(models: &mut Vec<Model>) {
+    let Some(template) = models
+        .iter()
+        .find(|model| model.id == "gpt-5.6-sol")
+        .cloned()
+    else {
+        return;
+    };
+
+    for (id, display_name, description, effort) in [
+        (
+            "chatgpt-web/light",
+            "GPT-5.6 Sol (Web) - Leve",
+            "ChatGPT Web Sol em modo Leve/Instant.",
+            codex_protocol::openai_models::ReasoningEffort::Low,
+        ),
+        (
+            "chatgpt-web/medium",
+            "GPT-5.6 Sol (Web) - Médio",
+            "ChatGPT Web Sol em modo Médio.",
+            codex_protocol::openai_models::ReasoningEffort::Medium,
+        ),
+        (
+            "chatgpt-web/high",
+            "GPT-5.6 Sol (Web) - Alto",
+            "ChatGPT Web Sol em modo Alto.",
+            codex_protocol::openai_models::ReasoningEffort::High,
+        ),
+    ] {
+        if models.iter().any(|model| model.id == id) {
+            continue;
+        }
+
+        let mut alias = template.clone();
+        alias.id = id.to_string();
+        alias.model = id.to_string();
+        alias.display_name = display_name.to_string();
+        alias.description = description.to_string();
+        alias.hidden = false;
+        alias.is_default = false;
+        alias.upgrade = None;
+        alias.upgrade_info = None;
+        alias.availability_nux = None;
+        alias.default_reasoning_effort = effort;
+        alias
+            .supported_reasoning_efforts
+            .retain(|option| option.reasoning_effort == effort);
+        alias.available_access_programs = None;
+        models.push(alias);
     }
 }
 
@@ -166,6 +219,25 @@ mod tests {
         assert_eq!(light.display_name, "GPT-5.6 Sol (Web) - Leve");
         assert_eq!(medium.display_name, "GPT-5.6 Sol (Web) - Médio");
         assert_eq!(high.display_name, "GPT-5.6 Sol (Web) - Alto");
+    }
+
+    #[test]
+    fn web_picker_synthesizes_aliases_when_catalog_omits_web_rows() {
+        let models = supported_models(vec![preset("gpt-5.6-sol", true)], false);
+
+        for (id, display_name) in [
+            ("chatgpt-web/light", "GPT-5.6 Sol (Web) - Leve"),
+            ("chatgpt-web/medium", "GPT-5.6 Sol (Web) - Médio"),
+            ("chatgpt-web/high", "GPT-5.6 Sol (Web) - Alto"),
+        ] {
+            let model = models
+                .iter()
+                .find(|model| model.id == id)
+                .expect("Web alias should be synthesized");
+            assert_eq!(model.display_name, display_name);
+            assert!(!model.hidden);
+            assert_eq!(model.supported_reasoning_efforts.len(), 1);
+        }
     }
 
     #[test]
