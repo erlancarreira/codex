@@ -20,6 +20,24 @@ jobs:
       CARGO_PROFILE_RELEASE_STRIP: "symbols"
     steps:
       - uses: actions/checkout@v7
+      - name: Verify SQL migration line endings
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem state -Recurse -Filter *.sql
+          $bad = @()
+          foreach ($file in $files) {
+            $bytes = [IO.File]::ReadAllBytes($file.FullName)
+            if ($bytes -contains 13) { $bad += $file.FullName }
+          }
+          if ($bad.Count -gt 0) {
+            $bad | ForEach-Object { Write-Error "CRLF migration detected: $_" }
+            exit 1
+          }
+          $hash = (Get-FileHash state/migrations/0001_threads.sql -Algorithm SHA384).Hash
+          Write-Host "0001_threads.sql SHA384=$hash"
+          if ($hash -ne "627EF19164C9BB298A0CD99945981C9B7BDA3D9E6CF12EB35145E3B1D3BF7CF8740F0DBAA0B475185FC2993397078049") {
+            throw "Unexpected migration checksum; refusing to build an incompatible Windows binary"
+          }
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2.9.2
         with:
