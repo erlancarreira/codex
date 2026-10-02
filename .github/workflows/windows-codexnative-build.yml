@@ -9,18 +9,38 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     defaults:
       run:
         working-directory: codex-rs
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_DEBUG: "none"
+      CARGO_PROFILE_RELEASE_STRIP: "symbols"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: codex-rs -> target
+          cache-on-failure: true
       - name: Build codex-cli release
-        run: cargo build -p codex-cli --release
+        shell: pwsh
+        run: |
+          $build = Start-Process cargo -ArgumentList @('build','-p','codex-cli','--bin','codex','--release') -NoNewWindow -PassThru
+          while (-not $build.HasExited) {
+            Write-Host ("[{0}] cargo build active (PID {1})" -f (Get-Date -Format 'u'), $build.Id)
+            Get-Process -Id $build.Id -ErrorAction SilentlyContinue | Select-Object Id,CPU,WorkingSet64
+            Start-Sleep -Seconds 120
+            $build.Refresh()
+          }
+          if ($build.ExitCode -ne 0) { exit $build.ExitCode }
+      - name: Verify executable
+        shell: pwsh
+        run: |
+          Get-Item target/release/codex.exe | Select-Object FullName,Length,LastWriteTime
+          Get-FileHash target/release/codex.exe -Algorithm SHA256
       - name: Upload CodexNative executable
         uses: actions/upload-artifact@v4
         with:
