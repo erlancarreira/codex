@@ -92,7 +92,7 @@ fn ensure_chatgpt_web_picker_aliases(models: &mut Vec<Model>) {
         alias.upgrade = None;
         alias.upgrade_info = None;
         alias.availability_nux = None;
-        alias.default_reasoning_effort = effort;
+        alias.default_reasoning_effort = effort.clone();
         alias
             .supported_reasoning_efforts
             .retain(|option| option.reasoning_effort == effort);
