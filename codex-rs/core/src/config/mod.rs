@@ -89,6 +89,7 @@ use codex_mcp::McpProtocolMode;
 use codex_mcp::McpServerRegistration;
 use codex_mcp::ResolvedMcpCatalog;
 use codex_model_provider::ProviderCapabilities;
+use codex_model_provider_info::CHATGPT_WEB_BASE_URL;
 use codex_model_provider_info::LEGACY_OLLAMA_CHAT_PROVIDER_ID;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::OLLAMA_CHAT_PROVIDER_REMOVED_ERROR;
@@ -3805,7 +3806,7 @@ impl Config {
             .or(model_provider)
             .or(cfg.model_provider)
             .unwrap_or_else(|| "openai".to_string());
-        let model_provider = model_providers
+        let mut model_provider = model_providers
             .get(&model_provider_id)
             .ok_or_else(|| {
                 let message = if model_provider_id == LEGACY_OLLAMA_CHAT_PROVIDER_ID {
@@ -3816,6 +3817,19 @@ impl Config {
                 std::io::Error::new(std::io::ErrorKind::NotFound, message)
             })?
             .clone();
+
+        // codex-chatgpt-web deliberately keeps the built-in OpenAI provider selected so the
+        // native and Web catalogs can coexist. Its loopback Responses bridge is HTTP/SSE-only,
+        // though, so probing /v1/responses as a WebSocket only adds a guaranteed HTTP 426 before
+        // every first turn. Keep ordinary OpenAI/custom base URLs unchanged.
+        if model_provider_id == codex_model_provider_info::OPENAI_PROVIDER_ID
+            && model_provider
+                .base_url
+                .as_deref()
+                .is_some_and(|url| url.trim_end_matches('/') == CHATGPT_WEB_BASE_URL)
+        {
+            model_provider.supports_websockets = false;
+        }
 
         let shell_environment_policy = ShellEnvironmentPolicy::from(cfg.shell_environment_policy);
         let allow_login_shell = cfg.allow_login_shell.unwrap_or(true);

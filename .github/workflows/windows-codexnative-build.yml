@@ -1,0 +1,30 @@
+name: Windows CodexNative Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - ci/windows-picker-build
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: codex-rs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: codex-rs -> target
+      - name: Build codex-cli release
+        run: cargo build -p codex-cli --release
+      - name: Upload CodexNative executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: codex-native-windows-x64
+          path: codex-rs/target/release/codex.exe
+          if-no-files-found: error
+          retention-days: 7

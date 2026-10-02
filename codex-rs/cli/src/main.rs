@@ -1260,7 +1260,7 @@ async fn cli_main(
                         },
                         ..Default::default()
                     };
-                    let exit = codex_app_server::run_main_with_transport_options(
+                    let exit = match codex_app_server::run_main_with_transport_options(
                         arg0_paths.clone(),
                         root_config_overrides,
                         LoaderOverrides::default(),
@@ -1271,7 +1271,14 @@ async fn cli_main(
                         auth,
                         runtime_options,
                     )
-                    .await?;
+                    .await
+                    {
+                        Ok(exit) => exit,
+                        Err(err) => {
+                            eprintln!("[codex-app-server-fatal] {err:#}");
+                            return Err(err.into());
+                        }
+                    };
                     if exit == codex_app_server::AppServerExit::Forced {
                         // Runtime teardown can wait forever for blocked rollout I/O.
                         std::process::exit(0);

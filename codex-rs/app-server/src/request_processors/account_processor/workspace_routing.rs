@@ -12,6 +12,7 @@ use codex_login::WorkspaceRoutingResolver;
 use codex_model_provider::ProviderAccount;
 use codex_model_provider::ProviderAccountError;
 use codex_model_provider::ProviderAccountState;
+use codex_protocol::account::PlanType;
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
@@ -166,9 +167,16 @@ impl AccountRequestProcessor {
                 AccountReadError::InvalidAccount(error) => invalid_request(error.to_string()),
                 AccountReadError::Routing(error) => internal_error(error.to_string()),
             })?;
+        let config = self.load_latest_config().await;
+        let auth = self.auth_manager.auth_cached();
+        let account = app_visible_account(
+            config.model_provider.is_chatgpt_web(),
+            read.account_state.account,
+            auth.as_ref(),
+        );
         Ok(Some(
             GetAccountResponse {
-                account: read.account_state.account.map(Account::from),
+                account: account.map(Account::from),
                 requires_openai_auth: read.account_state.requires_openai_auth,
                 workspace_routing: read.workspace_routing.map(|routing| {
                     codex_app_server_protocol::WorkspaceRouting {
@@ -422,6 +430,25 @@ impl AccountRequestProcessor {
         }
         result
     }
+}
+
+fn app_visible_account(
+    is_chatgpt_web: bool,
+    provider_account: Option<ProviderAccount>,
+    auth: Option<&CodexAuth>,
+) -> Option<ProviderAccount> {
+    if !is_chatgpt_web || provider_account.is_some() {
+        return provider_account;
+    }
+
+    auth.filter(|auth| auth.is_chatgpt_auth())
+        .map(|auth| ProviderAccount::Chatgpt {
+            email: auth.get_account_email(),
+            plan_type: auth
+                .account_plan_type()
+                .map(PlanType::from)
+                .unwrap_or(PlanType::Unknown),
+        })
 }
 
 fn resolve_routing(

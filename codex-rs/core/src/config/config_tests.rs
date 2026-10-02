@@ -252,6 +252,56 @@ async fn load_config_applies_optional_mcp_startup_grace() -> std::io::Result<()>
 }
 
 #[tokio::test]
+async fn openai_provider_disables_websocket_probe_for_chatgpt_web_loopback_bridge()
+-> std::io::Result<()> {
+    let codex_home = tempdir()?;
+    let config = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            openai_base_url: Some(CHATGPT_WEB_BASE_URL.to_string()),
+            ..Default::default()
+        },
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+
+    assert_eq!(
+        config.model_provider_id,
+        codex_model_provider_info::OPENAI_PROVIDER_ID
+    );
+    assert_eq!(
+        config.model_provider.base_url.as_deref(),
+        Some(CHATGPT_WEB_BASE_URL)
+    );
+    assert!(!config.model_provider.supports_websockets);
+    Ok(())
+}
+
+#[tokio::test]
+async fn openai_provider_keeps_websocket_support_for_other_custom_base_urls() -> std::io::Result<()>
+{
+    let codex_home = tempdir()?;
+    let base_url = "https://proxy.example.com/v1";
+    let config = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            openai_base_url: Some(base_url.to_string()),
+            ..Default::default()
+        },
+        ConfigOverrides::default(),
+        codex_home.abs(),
+    )
+    .await?;
+
+    assert_eq!(
+        config.model_provider_id,
+        codex_model_provider_info::OPENAI_PROVIDER_ID
+    );
+    assert_eq!(config.model_provider.base_url.as_deref(), Some(base_url));
+    assert!(config.model_provider.supports_websockets);
+    Ok(())
+}
+
+#[tokio::test]
 async fn load_config_resolves_thread_unload_delay() -> anyhow::Result<()> {
     let codex_home = tempdir()?;
     for (toml, seconds) in [

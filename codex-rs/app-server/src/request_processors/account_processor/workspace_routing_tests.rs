@@ -5,6 +5,38 @@ use pretty_assertions::assert_eq;
 use serde_json::Value;
 use test_case::test_case;
 
+#[test]
+fn chatgpt_web_account_read_uses_valid_codex_oauth_for_app_visibility() {
+    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    assert!(matches!(
+        app_visible_account(/*is_chatgpt_web*/ true, None, Some(&auth)),
+        Some(ProviderAccount::Chatgpt { .. })
+    ));
+}
+
+#[test]
+fn non_chatgpt_web_account_read_does_not_inherit_codex_oauth() {
+    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    assert_eq!(
+        app_visible_account(/*is_chatgpt_web*/ false, None, Some(&auth)),
+        None
+    );
+}
+
+#[test]
+fn chatgpt_web_account_read_preserves_provider_account() {
+    let provider_account = ProviderAccount::ApiKey;
+    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+    assert_eq!(
+        app_visible_account(
+            /*is_chatgpt_web*/ true,
+            Some(provider_account.clone()),
+            Some(&auth),
+        ),
+        Some(provider_account)
+    );
+}
+
 #[test_case(Some("https://gov.chatgpt.com/backend-api/"), "NO_CONSTRAINT", "https://gov.chatgpt.com"; "configured_only")]
 #[test_case(None, "https://gov.chatgpt.com", "https://gov.chatgpt.com"; "discovered_only")]
 #[test_case(Some("https://GOV.chatgpt.com:443/backend-api/"), "https://gov.chatgpt.com", "https://gov.chatgpt.com"; "matching_effective_port")]
